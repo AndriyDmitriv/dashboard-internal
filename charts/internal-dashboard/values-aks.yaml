@@ -1,7 +1,6 @@
 api:
   image:
-    tag: latest
-
+    tag: 1e5357966194f4a40a023b172eb37f98ef447a07
 web:
   frontend:
-    tag: latest
+    tag: 1e5357966194f4a40a023b172eb37f98ef447a07
