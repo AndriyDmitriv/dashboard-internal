@@ -111,6 +111,7 @@ module "acr" {
   aks_kubelet_identity_object_id = module.aks.kubelet_identity_object_id
 
   github_repository = var.github_repository
+  github_oidc_repo  = var.github_oidc_repo
   github_branch     = coalesce(var.github_branch, var.app_target_revision)
 }
 

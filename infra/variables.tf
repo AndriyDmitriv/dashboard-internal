@@ -148,6 +148,12 @@ variable "github_repository" {
   default     = null
 }
 
+variable "github_oidc_repo" {
+  type        = string
+  description = "OIDC subject repo, e.g. owner@id/repo@id"
+  default     = null
+}
+
 variable "github_branch" {
   type        = string
   description = "CI branch"
