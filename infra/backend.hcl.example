@@ -1,0 +1,4 @@
+resource_group_name  = "rg-tfstates"
+storage_account_name = "tfstatesa123456"
+container_name       = "tfstate"
+key                  = "aks-argocd-wireguard/demo.tfstate"

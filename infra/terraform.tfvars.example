@@ -1,0 +1,15 @@
+subscription_id     = "00000000-0000-0000-0000-000000000000"
+location            = "swedencentral"
+name_prefix         = "demo"
+system_node_vm_size = "Standard_D2s_v6"
+wireguard_peers = ["admin", "dev1"]
+app_host   = "dashboard.example.com"
+acme_email = "you@example.com"
+cluster_issuer = "letsencrypt-staging"
+app_repo_url        = "https://github.com/AndriyDmitriv/dashboard-internal.git"
+app_target_revision = "main"
+github_repository = "OWNER/REPO" 
+tags = {
+  Environment = "demo"
+  ManagedBy   = "terraform"
+}

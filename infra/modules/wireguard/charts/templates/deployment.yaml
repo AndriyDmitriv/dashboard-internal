@@ -1,0 +1,96 @@
+{{- if not .Values.server.url }}
+{{- fail "server.url is required: the public IP or DNS name clients connect to" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wireguard.fullname" . }}
+  labels:
+    {{- include "wireguard.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "wireguard.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "wireguard.selectorLabels" . | nindent 8 }}
+    spec:
+      initContainers:
+        - name: sysctl
+          image: {{ .Values.sysctlInit.image }}
+          command: ["sh", "-c", "sysctl -w net.ipv4.ip_forward=1"]
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 16Mi
+      containers:
+        - name: wireguard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+          env:
+            - name: TZ
+              value: {{ .Values.server.timezone | quote }}
+            - name: SERVERURL
+              value: {{ .Values.server.url | quote }}
+            - name: SERVERPORT
+              value: {{ .Values.server.port | quote }}
+            - name: PEERS
+              value: {{ .Values.server.peers | quote }}
+            - name: PEERDNS
+              value: {{ .Values.server.peerDns | quote }}
+            - name: INTERNAL_SUBNET
+              value: {{ .Values.server.internalSubnet | quote }}
+            - name: ALLOWEDIPS
+              value: {{ .Values.server.allowedIps | quote }}
+            - name: PERSISTENTKEEPALIVE_PEERS
+              value: {{ .Values.server.persistentKeepalive | quote }}
+            - name: LOG_CONFS
+              value: "false"
+          ports:
+            - name: wireguard
+              containerPort: {{ .Values.server.port }}
+              protocol: UDP
+          livenessProbe:
+            exec:
+              command: ["wg", "show", "wg0"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["wg", "show", "wg0"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "wireguard.fullname" . }}-config
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
