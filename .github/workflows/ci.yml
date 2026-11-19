@@ -15,3 +15,11 @@ jobs:
 
       - name: Build frontend image
         run: docker buildx build ./frontend
+
+      - uses: azure/setup-helm@v4
+
+      - name: Helm lint
+        run: helm lint ./charts/internal-dashboard
+
+      - name: Helm template
+        run: helm template dashboard ./charts/internal-dashboard

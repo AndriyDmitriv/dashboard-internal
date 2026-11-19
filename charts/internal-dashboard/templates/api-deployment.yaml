@@ -12,6 +12,10 @@ spec:
       {{- include "internal-dashboard.api.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}   
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+
       labels:
         {{- include "internal-dashboard.api.selectorLabels" . | nindent 8 }}
     spec:
@@ -27,16 +31,16 @@ spec:
               containerPort: {{ .Values.api.containerPort }}
               protocol: TCP
           env:
-            - name: APP_MODE
+            - name: APP_ENV
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "internal-dashboard.fullname" . }}-api
-                  key: APP_MODE
+                  key: APP_ENV
             - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ include "internal-dashboard.fullname" . }}-api
-                  key: redis-uri
+                  key: redis-url
           readinessProbe:
             httpGet:
               path: {{ .Values.api.probes.readiness.path }}
@@ -55,3 +59,9 @@ spec:
             failureThreshold: {{ .Values.api.probes.liveness.failureThreshold }}
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
