@@ -1,0 +1,45 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [aks]
+    paths-ignore:
+      - charts/internal-dashboard/values-aks.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      REG: ${{ secrets.ACR_NAME }}.azurecr.io
+      TAG: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - run: az acr login -n ${{ secrets.ACR_NAME }}
+
+      - name: Build and push
+        run: |
+          docker build -t $REG/internal-dashboard-api:$TAG .
+          docker build -t $REG/internal-dashboard-frontend:$TAG ./frontend
+          docker push $REG/internal-dashboard-api:$TAG
+          docker push $REG/internal-dashboard-frontend:$TAG
+
+      - name: Update tag
+        run: |
+          yq -i '.api.image.tag = strenv(TAG) | .web.frontend.tag = strenv(TAG)' charts/internal-dashboard/values-aks.yaml
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git commit -am "bump ${TAG::7}"
+          git push
