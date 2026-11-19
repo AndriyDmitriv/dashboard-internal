@@ -1,5 +1,3 @@
-## Рішення
-
 **Синтаксичні помилки / опечатки**
 - `Dockerfile`: `main:application` -> `main:app`. Flask називається `app`).
 - `api-deployment.yaml`: ключ секрету `redis-uri` -> `redis-url` як у `secret.yaml`.
@@ -21,6 +19,47 @@
 - Для gunicorn змонтований `emptyDir` у `/tmp`.
 - Анотації `checksum/config` (api, web) і `checksum/secret` (api): зміна ConfigMap/Secret у `helm upgrade` сама перезапускає под.
 - CI: до збірки образів додані `helm lint` і `helm template`.
+
+Що ламалось - чому - як вирішував
+
+## Образи не тягнуться
+
+`ErrImagePull` на api і web -> `pullPolicy: Always`, kubelet ігнорує імпортований у k3d образ і йде в Docker Hub -> `IfNotPresent` для `internal-dashboard-api` і `internal-dashboard-frontend`.
+
+## API не стартує
+
+1. `couldn't find key redis-uri in Secret` -> в деплойменті `redis-uri`, у секреті `redis-url` -> `key: redis-url`.
+2. `No usable temporary directory found` -> `readOnlyRootFilesystem: true`, gunicorn нема куди писати tmp -> `emptyDir` у `/tmp`, readOnly лишився.
+3. `KeyError: APP_ENV` -> апка читає `APP_ENV`, а передається `APP_MODE` -> перейменував у ConfigMap і деплойменті.
+4. `Failed to find attribute 'application' in 'main'` -> у Flask об'єкт `app` -> `CMD ... main:app` у Dockerfile.
+5. `OOMKill` -> ліміт пам'яті 16Mi замалий для Python -> 160Mi (максимум LimitRange).
+
+## Порти і пробі
+
+6. Под не стає Ready -> gunicorn слухає 8000, а в values 8080 -> 8000 у `containerPort`, пробах, NetworkPolicy.
+7. Liveness вбиває под, коли падає Redis -> пробі переплутані -> liveness `/api/health`, readiness `/api/ready`.
+8. `/api/` віддає `cache: down` -> NetworkPolicy пускає в Redis на 6380 -> 6379.
+
+
+
+## Сервіси та Ingress
+
+9. `/api` -> 503, у сервісу нема endpoints -> selector `component: backend`, под має `api` → `api`.
+10. `/` не відкривається -> web service дивиться на 8080, Caddy на 80 -> `targetPort: 80`.
+11. `/` → 404 від Caddy -> фронт копіюється в `dist`, а root `build` -> `caddyRoot: /srv/www/dist`.
+12. `/api/health` → 404 -> Traefik обрізав `/api`, а в апці маршрути з `/api` → `stripApiPrefix: false`.
+
+## Навантаження
+
+13. `helm test` падає на burst, под рестартує по liveness -> один sync-воркер, 40 запитів × 0.2 с ≈ 8 с -> `-w 2 --threads 4` у Dockerfile, burst 1 с.
+
+## Зміна конфігу
+
+14. Після `helm upgrade` зі зміною `caddyRoot` Caddy віддає старе -> под не перезапускається, Caddyfile через subPath -> анотації `checksum/config` (api, web) і `checksum/secret` (api).
+
+## CI
+
+Додав `helm lint` і `helm template` після збірки образів.
 
 ### Перевірка
 
@@ -112,3 +151,43 @@ Server: gunicorn
 {"status":"OK"}
 
 ```
+
+
+# Internal Dashboard
+
+Запустити систему в Kubernetes, знайти проблеми, виправити їх і довести, що стек стабільно відповідає на три публічні адреси.
+
+Стек: Helm-чарт `charts/internal-dashboard`, API (Flask/Gunicorn), статика (Caddy), Redis, Ingress через Traefik.
+
+## Запуск
+
+Потрібні `docker`, `kubectl`, `helm` і локальний кластер з Traefik. Нижче - `k3d` (k3s уже містить Traefik, ingress class `traefik`).
+
+```bash
+k3d cluster create dashboard --port "80:80@loadbalancer" --port "443:443@loadbalancer"
+
+docker build -t internal-dashboard-api:local .
+docker build -t internal-dashboard-frontend:local ./frontend
+k3d image import internal-dashboard-api:local -c dashboard
+k3d image import internal-dashboard-frontend:local -c dashboard
+
+helm upgrade --install dashboard ./charts/internal-dashboard \
+  -n dashboard --create-namespace --wait --timeout 5m
+```
+
+Додати в `/etc/hosts`:
+
+```text
+127.0.0.1 dashboard.local
+```
+
+Імена образів і теги мають збігатися з `charts/internal-dashboard/values.yaml`.
+
+## Очікуваний результат
+
+- `http://dashboard.local/` → HTML-сторінка (`Internal Dashboard`)
+- `http://dashboard.local/api/` → `200` і JSON `{"message":"Hello","env":"prod","cache":"ok"}`
+- `http://dashboard.local/api/health` → `200` і `{"status":"OK"}`
+
+
+
